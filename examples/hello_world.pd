@@ -1,0 +1,20 @@
+#N canvas 1053 275 737 504 10;
+#X obj 103 87 bng 15 250 50 0 empty empty empty 17 7 0 10 -262144 -1
+-1;
+#X floatatom -77 389 5 0 0 0 - - -;
+#X text -155 413 0 = not connected 1 = connected;
+#X msg -76 157 connect localhost 5005;
+#X obj -77 299 netsend;
+#X msg 50 201 send 1;
+#X obj 218 80 vsl 15 128 0 127 0 0 empty empty empty 0 -9 0 10 -262144
+-1 -1 0 1;
+#X msg 48 243 send 2 \$1;
+#X obj 110 146 metro 100;
+#X connect 0 0 3 0;
+#X connect 0 0 8 0;
+#X connect 3 0 4 0;
+#X connect 4 0 1 0;
+#X connect 5 0 4 0;
+#X connect 6 0 7 0;
+#X connect 7 0 4 0;
+#X connect 8 0 5 0;
