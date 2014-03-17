@@ -30,6 +30,8 @@ class Event:
         fp.write("%d %s\n"%(self.timestamp, single_line))
 
     def _coerce(self, param):
+        if '"' in param:
+            return param.replace('"', '')
         if '.' in param:
             return float(param)
         else:
