@@ -3,7 +3,7 @@
 -1;
 #X floatatom -77 389 5 0 0 0 - - -;
 #X text -155 413 0 = not connected 1 = connected;
-#X msg -76 157 connect localhost 5005;
+#X msg -76 157 connect localhost 13000;
 #X obj -77 299 netsend;
 #X msg 50 201 send 1;
 #X obj 218 80 vsl 15 128 0 127 0 0 empty empty empty 0 -9 0 10 -262144

@@ -5,9 +5,13 @@ import inspect
 import socket
 import threading
 
-TCP_IP = "127.0.0.1"
-TCP_BUFFER_SIZE = 1024
-QUEUE_MAX_SIZE = -1 # -1 == no size restriction on the queue
+_IP = "127.0.0.1"
+
+_SOCKET_BUFFER_SIZE = 100
+
+# -1 == no size restriction on the queue
+_QUEUE_MAX_SIZE = -1
+
 
 class Event:
     def __init__(self, timestamp, data):
@@ -27,7 +31,7 @@ class Event:
 
     def save(self, fp):
         single_line = self.original_data.replace("\n", "")
-        fp.write("%d %s\n"%(self.timestamp, single_line))
+        fp.write("%d %s\n" % (self.timestamp, single_line))
 
     def _coerce(self, param):
         if '"' in param:
@@ -36,6 +40,7 @@ class Event:
             return float(param)
         else:
             return int(param)
+
 
 class DefaultTimer:
     def __init__(self):
@@ -48,10 +53,10 @@ class DefaultTimer:
 
     def update(self, dt):
         self.dt = dt * 1000
-        self.frame_index+=1
+        self.frame_index += 1
 
     def get_current_time(self):
-        if self.start_time==None: raise ValueError, "Timer hasn't been started! call start before using it."
+        if self.start_time == None: raise ValueError, "Timer hasn't been started! call start before using it."
         delta = datetime.now() - self.start_time
         # TODO: BUGGY this one will wrap around after 24 hours!
         return delta.seconds * 1000 + (delta.microseconds / 1000)
@@ -59,28 +64,59 @@ class DefaultTimer:
     def is_started(self):
         return self.start_time is not None
 
-def tcp_listener(port, producer_queue, timestamp_func, verbose):
-    tcp_port = port
 
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.bind((TCP_IP, tcp_port))
-    s.listen(1)
+class TcpServer:
+    def __init__(self, port):
+        self._port = port
+        self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-    print("Waiting for connection...")
-    conn, addr = s.accept()
-    try:
+    def connect(self):
+        self._socket.bind((_IP, self._port))
+        self._socket.listen(1)
+        print("Waiting for TCP connection...")
+        self._socket, addr = self._socket.accept()
         print('Connection address:', addr)
+
+    def receive(self):
+        return self._socket.recv(_SOCKET_BUFFER_SIZE)
+
+    def disconnect(self):
+        self._socket.close()
+
+
+class UdpServer:
+    def __init__(self, port):
+        self._port = port
+        self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+    def connect(self):
+        self._socket.bind((_IP, self._port))
+        print("Waiting for UDP connection...")
+
+    def receive(self):
+        data, conn = self._socket.recvfrom(_SOCKET_BUFFER_SIZE)
+        return data
+
+    def disconnect(self):
+        self._socket.close()
+
+
+def receiver_loop(server, producer_queue, timestamp_func, verbose):
+    server.connect()
+
+    try:
         while 1:
-            data = conn.recv(TCP_BUFFER_SIZE)
+            data = server.receive()
             if not data: break
             if verbose: print("received data:", data)
             if data[-1] == '\n':
                 event = Event(timestamp_func(), data)
                 producer_queue.put(event)
             else:
-                raise Exception("Too large data object received. Max size: %d." % TCP_BUFFER_SIZE)
+                raise Exception("Too large data object received. Max size: %d." % _SOCKET_BUFFER_SIZE)
     finally:
-        conn.close()
+        server.disconnect()
+
 
 def patch_replayer(fp, producer_queue, timestamp_func):
     for line in fp.readlines():
@@ -88,7 +124,7 @@ def patch_replayer(fp, producer_queue, timestamp_func):
         timestamp = int(parts[0])
         payload = parts[1:]
 
-        while timestamp_func()<timestamp:
+        while timestamp_func() < timestamp:
             pass
 
         event = Event(timestamp_func(), ' '.join(payload))
@@ -101,6 +137,7 @@ class DefaultEventHandler:
 
     def handle_event(self, event):
         if self.verbose: print("Unhandled event: %s" % event)
+
 
 class TriggerFuncWrapper:
     def __init__(self, func):
@@ -130,6 +167,7 @@ class Trigger:
     def handle_event(self, event):
         for t in self.trigger_wrappers:
             t.trigger(event)
+
 
 class Slider:
     def __init__(self, min_value=0.0, max_value=1.0):
@@ -179,13 +217,19 @@ class Patch:
         self._recorded_events.append(event)
         return event
 
-def create_remote_patch(port=5005, verbose_listener=False, verbose_patch=False):
-    queue = Queue(QUEUE_MAX_SIZE)
+
+def create_remote_patch(port=13000, verbose_listener=False, verbose_patch=False, use_udp=False):
+    queue = Queue(_QUEUE_MAX_SIZE)
     timer = DefaultTimer()
     patch = Patch(queue, verbose_patch)
 
-    server_thread = functools.partial(tcp_listener,
-                                      port=port,
+    if use_udp:
+        server = UdpServer(port=port)
+    else:
+        server = TcpServer(port=port)
+
+    server_thread = functools.partial(receiver_loop,
+                                      server,
                                       producer_queue=queue,
                                       timestamp_func=timer.get_current_time,
                                       verbose=verbose_listener)
@@ -196,8 +240,9 @@ def create_remote_patch(port=5005, verbose_listener=False, verbose_patch=False):
     t.start()
     return patch
 
+
 def replay_patch(event_filename, verbose_patch=False):
-    queue = Queue(QUEUE_MAX_SIZE)
+    queue = Queue(_QUEUE_MAX_SIZE)
     timer = DefaultTimer()
     patch = Patch(queue, verbose_patch)
 
